@@ -31,12 +31,13 @@ type IAnalyzer interface {
 }
 
 type Analyzer struct {
-	Client      *kubernetes.Client
-	Context     context.Context
-	Namespace   string
-	AIClient    ai.IAI
-	PreAnalysis map[string]PreAnalysis
-	Results     []Result
+	Client          *kubernetes.Client
+	MetricsClient   *kubernetes.MetricsClient
+	Context         context.Context
+	Namespace       string
+	AIClient        ai.IAI
+	PreAnalysis     map[string]PreAnalysis
+	Results         []Result
 }
 
 type PreAnalysis struct {
@@ -54,14 +55,17 @@ type PreAnalysis struct {
 	Node                     v1.Node
 	// Integrations
 	TrivyVulnerabilityReport trivy.VulnerabilityReport
+	NodeStatusDetails        NodeStatus
 }
 
+
 type Result struct {
-	Kind         string    `json:"kind"`
-	Name         string    `json:"name"`
-	Error        []Failure `json:"error"`
-	Details      string    `json:"details"`
-	ParentObject string    `json:"parentObject"`
+	Kind              string    `json:"kind"`
+	Name              string    `json:"name"`
+	Error             []Failure `json:"error"`
+	Details           string    `json:"details"`
+	ParentObject      string    `json:"parentObject"`
+	NodeStatusResult  NodeStatus `json:"nodeStatus"`
 }
 
 type Failure struct {
@@ -69,6 +73,41 @@ type Failure struct {
 	Sensitive []Sensitive
 }
 
+
+// type NodeStatus struct {	        
+// 	//Conditions               []v1.NodeCondition       `json:"conditions,omitempty"`
+// 	Allocatable              v1.ResourceList          `json:"allocatable,omitempty"`
+// 	// Capacity                 v1.ResourceList          `json:"capacity,omitempty"`
+// 	// Phase                    v1.NodePhase             `json:"phase,omitempty"`
+// 	// HostIP                   string                   `json:"hostIP,omitempty"`
+// 	// PodCIDR                  string                   `json:"podCIDR,omitempty"`
+// 	// PodCIDRs                 []string                 `json:"podCIDRs,omitempty"`
+// 	// PodCIDRSize              int                      `json:"podCIDRSize,omitempty"`
+// 	// StartTime                *metav1.Time             `json:"startTime,omitempty"`
+// 	// Unschedulable            bool                     `json:"unschedulable,omitempty"`
+// 	// Addresses                []v1.NodeAddress         `json:"addresses,omitempty"`
+// 	// DaemonEndpoints          v1.NodeDaemonEndpoints   `json:"daemonEndpoints,omitempty"`
+// 	// NodeInfo                 v1.NodeSystemInfo        `json:"nodeInfo,omitempty"`
+// 	// VolumesAttached          []v1.AttachedVolume      `json:"volumesAttached,omitempty"`
+// 	// VolumesInUse             []v1.UniqueVolumeName    `json:"volumesInUse,omitempty"`
+// 	// ConfigSource             v1.NodeConfigSource     `json:"configSource,omitempty"`
+// 	// Sensitive                []Sensitive	
+// }
+
+
+type NodeStatus struct {	
+	Name						     string        
+	Role                             string
+	CPUUsage					     string
+	MemoryUsage                      string
+	CPUCapacity                      string
+	MemCapacity                      string
+	CPUAllocatable                   string
+	MemAllocatable                   string
+	TotalPodCount						 int
+	WorkloadPodCount				 int
+
+}
 type Sensitive struct {
 	Unmasked string
 	Masked   string

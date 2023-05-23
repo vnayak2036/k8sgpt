@@ -20,10 +20,17 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kubectl/pkg/scheme"
+	"k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
 type Client struct {
 	Client     kubernetes.Interface
+	RestClient rest.Interface
+	Config     *rest.Config
+}
+
+type MetricsClient struct {
+	Client     versioned.Interface
 	RestClient rest.Interface
 	Config     *rest.Config
 }
@@ -35,6 +42,11 @@ func (c *Client) GetConfig() *rest.Config {
 func (c *Client) GetClient() kubernetes.Interface {
 	return c.Client
 }
+
+func (c *MetricsClient) GetMetricsClient() versioned.Interface {
+	return c.Client
+}
+
 
 func (c *Client) GetRestClient() rest.Interface {
 	return c.RestClient
@@ -75,6 +87,48 @@ func NewClient(kubecontext string, kubeconfig string) (*Client, error) {
 	}
 
 	return &Client{
+		Client:     clientSet,
+		RestClient: restClient,
+		Config:     config,
+	}, nil
+}
+
+
+func NewMetricsClient(kubecontext string, kubeconfig string) (*MetricsClient, error) {
+	var config *rest.Config
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+
+		if kubeconfig != "" {
+			loadingRules.ExplicitPath = kubeconfig
+		}
+
+		clientConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+			loadingRules,
+			&clientcmd.ConfigOverrides{
+				CurrentContext: kubecontext,
+			})
+		// create the clientset
+		config, err = clientConfig.ClientConfig()
+		if err != nil {
+			return nil, err
+		}
+	}
+	clientSet, err := versioned.NewForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	config.APIPath = "/api"
+	config.GroupVersion = &scheme.Scheme.PrioritizedVersionsForGroup("")[0]
+	config.NegotiatedSerializer = serializer.WithoutConversionCodecFactory{CodecFactory: scheme.Codecs}
+
+	restClient, err := rest.RESTClientFor(config)
+	if err != nil {
+		return nil, err
+	}
+
+	return &MetricsClient{
 		Client:     clientSet,
 		RestClient: restClient,
 		Config:     config,

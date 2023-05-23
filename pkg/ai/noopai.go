@@ -38,13 +38,13 @@ func (c *NoOpAIClient) Configure(config IAIConfig, language string) error {
 	return nil
 }
 
-func (c *NoOpAIClient) GetCompletion(ctx context.Context, prompt string) (string, error) {
+func (c *NoOpAIClient) GetCompletion(ctx context.Context, prompt string, prompt_name...string) (string, error) {
 	// Create a completion request
 	response := "I am a noop response to the prompt " + prompt
 	return response, nil
 }
 
-func (a *NoOpAIClient) Parse(ctx context.Context, prompt []string, cache cache.ICache) (string, error) {
+func (a *NoOpAIClient) Parse(ctx context.Context, prompt []string, cache cache.ICache, kind...string) (string, error) {
 	// parse the text with the AI backend
 	inputKey := strings.Join(prompt, " ")
 	// Check for cached data

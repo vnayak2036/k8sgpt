@@ -28,7 +28,6 @@ import (
 	"github.com/k8sgpt-ai/k8sgpt/pkg/cache"
 	"github.com/k8sgpt-ai/k8sgpt/pkg/common"
 	"github.com/k8sgpt-ai/k8sgpt/pkg/kubernetes"
-	"github.com/k8sgpt-ai/k8sgpt/pkg/util"
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/viper"
 )
@@ -37,6 +36,7 @@ type Analysis struct {
 	Context        context.Context
 	Filters        []string
 	Client         *kubernetes.Client
+	MetricsClient  *kubernetes.MetricsClient
 	AIClient       ai.IAI
 	Results        []common.Result
 	Errors         []string
@@ -104,10 +104,17 @@ func NewAnalysis(backend string, language string, filters []string, namespace st
 		return nil, err
 	}
 
+	metricsClient, err := kubernetes.NewMetricsClient(kubecontext, kubeconfig)
+	if err != nil {
+		color.Red("Error initialising kubernetes metrics client: %v", err)
+		return nil, err
+	}
+
 	return &Analysis{
 		Context:        ctx,
 		Filters:        filters,
 		Client:         client,
+		MetricsClient:  metricsClient,
 		AIClient:       aiClient,
 		Namespace:      namespace,
 		Cache:          cache.New(noCache),
@@ -122,10 +129,11 @@ func (a *Analysis) RunAnalysis() {
 	analyzerMap := analyzer.GetAnalyzerMap()
 
 	analyzerConfig := common.Analyzer{
-		Client:    a.Client,
-		Context:   a.Context,
-		Namespace: a.Namespace,
-		AIClient:  a.AIClient,
+		Client:        a.Client,
+		MetricsClient: a.MetricsClient,
+		Context:       a.Context,
+		Namespace:     a.Namespace,
+		AIClient:      a.AIClient,
 	}
 
 	semaphore := make(chan struct{}, a.MaxConcurrency)
@@ -156,6 +164,7 @@ func (a *Analysis) RunAnalysis() {
 	semaphore = make(chan struct{}, a.MaxConcurrency)
 	// if the filters flag is specified
 	if len(a.Filters) != 0 {
+		fmt.Println("Running Analysis")
 		var wg sync.WaitGroup
 		var mutex sync.Mutex
 		for _, filter := range a.Filters {
@@ -212,24 +221,23 @@ func (a *Analysis) GetAIResults(output string, anonymize bool) error {
 	if len(a.Results) == 0 {
 		return nil
 	}
-
 	var bar *progressbar.ProgressBar
 	if output != "json" {
 		bar = progressbar.Default(int64(len(a.Results)))
 	}
-
-	for index, analysis := range a.Results {
-		var texts []string
-
-		for _, failure := range analysis.Error {
-			if anonymize {
-				for _, s := range failure.Sensitive {
-					failure.Text = util.ReplaceIfMatch(failure.Text, s.Unmasked, s.Masked)
-				}
-			}
-			texts = append(texts, failure.Text)
-		}
-		parsedText, err := a.AIClient.Parse(a.Context, texts, a.Cache)
+    var texts []string
+	var kind string
+	var index int
+	var analysis common.Result
+	for index, analysis = range a.Results {
+		
+		//var prompt_data interface{}
+		kind = analysis.Kind
+		failure := analysis.NodeStatusResult
+		status := fmt.Sprintf("%+v", failure)
+		texts = append(texts, status)
+	}
+		parsedText, err := a.AIClient.Parse(a.Context, texts, a.Cache, kind)
 		if err != nil {
 			// FIXME: can we avoid checking if output is json multiple times?
 			//   maybe implement the progress bar better?
@@ -258,6 +266,6 @@ func (a *Analysis) GetAIResults(output string, anonymize bool) error {
 			bar.Add(1)
 		}
 		a.Results[index] = analysis
-	}
+	
 	return nil
 }

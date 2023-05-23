@@ -49,20 +49,38 @@ func (c *OpenAIClient) Configure(config IAIConfig, language string) error {
 	}
 	c.language = language
 	c.client = client
-	c.model = config.GetModel()
+	//c.model = config.GetModel()
+	c.model = openai.GPT4
 	return nil
 }
 
-func (c *OpenAIClient) GetCompletion(ctx context.Context, prompt string) (string, error) {
+func (c *OpenAIClient) GetCompletion(ctx context.Context, prompt string, prompt_name...string) (string, error) {
+
 	// Create a completion request
+	// var cont = fmt.Sprintf(default_prompt, c.language, prompt)
+	// println(cont)
+	pname := "default_prompt"
+	if len(prompt_name) > 0 {
+		pname = prompt_name[0]
+	}
+    var content string
+	switch pname {
+	case "node_resource_prompt":
+		content = fmt.Sprintf(node_usage_prompt, prompt)
+	default:
+		content = fmt.Sprintf(default_prompt, c.language, prompt)
+	}
+    fmt.Println("****** Prompt Content is **********")
+	fmt.Println(content)
 	resp, err := c.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model: c.model,
 		Messages: []openai.ChatCompletionMessage{
-			{
+			{ 
 				Role:    "user",
-				Content: fmt.Sprintf(default_prompt, c.language, prompt),
+				Content: content,
 			},
 		},
+		Temperature: 0,
 	})
 	if err != nil {
 		return "", err
@@ -70,8 +88,15 @@ func (c *OpenAIClient) GetCompletion(ctx context.Context, prompt string) (string
 	return resp.Choices[0].Message.Content, nil
 }
 
-func (a *OpenAIClient) Parse(ctx context.Context, prompt []string, cache cache.ICache) (string, error) {
+func (a *OpenAIClient) Parse(ctx context.Context, prompt []string, cache cache.ICache, kind...string) (string, error) {
+	
+	kd := ""
+	prompt_name := ""
+	if len(kind) > 0 {
+		kd = kind[0]
+	}
 	inputKey := strings.Join(prompt, " ")
+	
 	// Check for cached data
 	cacheKey := util.GetCacheKey(a.GetName(), a.language, inputKey)
 
@@ -90,8 +115,12 @@ func (a *OpenAIClient) Parse(ctx context.Context, prompt []string, cache cache.I
 			return string(output), nil
 		}
 	}
-
-	response, err := a.GetCompletion(ctx, inputKey)
+	switch kd {
+	  case "NodeStatus":
+		prompt_name = "node_resource_prompt"
+		break
+	}
+	response, err := a.GetCompletion(ctx, inputKey, prompt_name)
 	if err != nil {
 		return "", err
 	}
