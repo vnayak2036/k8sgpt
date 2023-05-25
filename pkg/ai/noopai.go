@@ -38,13 +38,13 @@ func (c *NoOpAIClient) Configure(config IAIConfig, language string) error {
 	return nil
 }
 
-func (c *NoOpAIClient) GetCompletion(ctx context.Context, prompt string, prompt_name...string) (string, error) {
+func (c *NoOpAIClient) GetCompletion(ctx context.Context, prompt string, prompt_name ...string) (string, error) {
 	// Create a completion request
 	response := "I am a noop response to the prompt " + prompt
 	return response, nil
 }
 
-func (a *NoOpAIClient) Parse(ctx context.Context, prompt []string, cache cache.ICache, kind...string) (string, error) {
+func (a *NoOpAIClient) Parse(ctx context.Context, prompt []string, cache cache.ICache, kind ...string) (string, error) {
 	// parse the text with the AI backend
 	inputKey := strings.Join(prompt, " ")
 	// Check for cached data
@@ -57,7 +57,7 @@ func (a *NoOpAIClient) Parse(ctx context.Context, prompt []string, cache cache.I
 		return "", err
 	}
 
-  err = cache.Store(cacheKey, base64.StdEncoding.EncodeToString([]byte(response)))
+	err = cache.Store(cacheKey, base64.StdEncoding.EncodeToString([]byte(response)))
 
 	if err != nil {
 		color.Red("error storing value to cache: %v", err)

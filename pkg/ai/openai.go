@@ -54,7 +54,7 @@ func (c *OpenAIClient) Configure(config IAIConfig, language string) error {
 	return nil
 }
 
-func (c *OpenAIClient) GetCompletion(ctx context.Context, prompt string, prompt_name...string) (string, error) {
+func (c *OpenAIClient) GetCompletion(ctx context.Context, prompt string, prompt_name ...string) (string, error) {
 
 	// Create a completion request
 	// var cont = fmt.Sprintf(default_prompt, c.language, prompt)
@@ -63,19 +63,20 @@ func (c *OpenAIClient) GetCompletion(ctx context.Context, prompt string, prompt_
 	if len(prompt_name) > 0 {
 		pname = prompt_name[0]
 	}
-    var content string
+	var content string
 	switch pname {
 	case "node_resource_prompt":
-		content = fmt.Sprintf(node_usage_prompt, prompt)
+		nodeCount := strings.Count(prompt, "Name:")
+		content = fmt.Sprintf(node_usage_prompt, nodeCount, prompt)
 	default:
 		content = fmt.Sprintf(default_prompt, c.language, prompt)
 	}
-    fmt.Println("****** Prompt Content is **********")
+	fmt.Println("****** Prompt Content is **********")
 	fmt.Println(content)
 	resp, err := c.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model: c.model,
 		Messages: []openai.ChatCompletionMessage{
-			{ 
+			{
 				Role:    "user",
 				Content: content,
 			},
@@ -88,15 +89,14 @@ func (c *OpenAIClient) GetCompletion(ctx context.Context, prompt string, prompt_
 	return resp.Choices[0].Message.Content, nil
 }
 
-func (a *OpenAIClient) Parse(ctx context.Context, prompt []string, cache cache.ICache, kind...string) (string, error) {
-	
-	kd := ""
-	prompt_name := ""
+func (a *OpenAIClient) Parse(ctx context.Context, prompt []string, cache cache.ICache, kind ...string) (string, error) {
+
+	var kd, prompt_name string
 	if len(kind) > 0 {
 		kd = kind[0]
 	}
 	inputKey := strings.Join(prompt, " ")
-	
+
 	// Check for cached data
 	cacheKey := util.GetCacheKey(a.GetName(), a.language, inputKey)
 
@@ -116,7 +116,7 @@ func (a *OpenAIClient) Parse(ctx context.Context, prompt []string, cache cache.I
 		}
 	}
 	switch kd {
-	  case "NodeStatus":
+	case "NodeStatus":
 		prompt_name = "node_resource_prompt"
 		break
 	}
