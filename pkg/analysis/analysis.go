@@ -33,17 +33,18 @@ import (
 )
 
 type Analysis struct {
-	Context        context.Context
-	Filters        []string
-	Client         *kubernetes.Client
-	MetricsClient  *kubernetes.MetricsClient
-	AIClient       ai.IAI
-	Results        []common.Result
-	Errors         []string
-	Namespace      string
-	Cache          cache.ICache
-	Explain        bool
-	MaxConcurrency int
+	Context            context.Context
+	Filters            []string
+	Client             *kubernetes.Client
+	MetricsClient      *kubernetes.MetricsClient
+	AIClient           ai.IAI
+	Results            []common.Result
+	Errors             []string
+	Namespace          string
+	Cache              cache.ICache
+	Explain            bool
+	MaxConcurrency     int
+	AnalysisAIProvider string
 }
 
 type AnalysisStatus string
@@ -55,6 +56,7 @@ const (
 )
 
 type JsonOutput struct {
+	Provider string          `json:"provider"`
 	Errors   AnalysisErrors  `json:"errors"`
 	Status   AnalysisStatus  `json:"status"`
 	Problems int             `json:"problems"`
@@ -72,6 +74,12 @@ func NewAnalysis(backend string, language string, filters []string, namespace st
 	if len(configAI.Providers) == 0 && explain {
 		color.Red("Error: AI provider not specified in configuration. Please run k8sgpt auth")
 		os.Exit(1)
+	}
+
+	// Backend string will have high priority than a default provider
+	// Backend as "openai" represents the default CLI argument passed through
+	if configAI.DefaultProvider != "" && backend == "openai" {
+		backend = configAI.DefaultProvider
 	}
 
 	var aiProvider ai.AIProvider
@@ -109,24 +117,30 @@ func NewAnalysis(backend string, language string, filters []string, namespace st
 		color.Red("Error initialising kubernetes metrics client: %v", err)
 		return nil, err
 	}
+	// load remote cache if it is configured
+	remoteCacheEnabled, err := cache.RemoteCacheEnabled()
+	if err != nil {
+		return nil, err
+	}
 
 	return &Analysis{
-		Context:        ctx,
-		Filters:        filters,
-		Client:         client,
-		MetricsClient:  metricsClient,
-		AIClient:       aiClient,
-		Namespace:      namespace,
-		Cache:          cache.New(noCache),
-		Explain:        explain,
-		MaxConcurrency: maxConcurrency,
+		Context:            ctx,
+		Filters:            filters,
+		Client:             client,
+		MetricsClient:      metricsClient,
+		AIClient:           aiClient,
+		Namespace:          namespace,
+		Cache:              cache.New(noCache, remoteCacheEnabled),
+		Explain:            explain,
+		MaxConcurrency:     maxConcurrency,
+		AnalysisAIProvider: backend,
 	}, nil
 }
 
 func (a *Analysis) RunAnalysis() {
 	activeFilters := viper.GetStringSlice("active_filters")
 
-	analyzerMap := analyzer.GetAnalyzerMap()
+	coreAnalyzerMap, analyzerMap := analyzer.GetAnalyzerMap()
 
 	analyzerConfig := common.Analyzer{
 		Client:        a.Client,
@@ -137,11 +151,11 @@ func (a *Analysis) RunAnalysis() {
 	}
 
 	semaphore := make(chan struct{}, a.MaxConcurrency)
-	// if there are no filters selected and no active_filters then run all of them
+	// if there are no filters selected and no active_filters then run coreAnalyzer
 	if len(a.Filters) == 0 && len(activeFilters) == 0 {
 		var wg sync.WaitGroup
 		var mutex sync.Mutex
-		for _, analyzer := range analyzerMap {
+		for _, analyzer := range coreAnalyzerMap {
 			wg.Add(1)
 			semaphore <- struct{}{}
 			go func(analyzer common.IAnalyzer, wg *sync.WaitGroup, semaphore chan struct{}) {
@@ -149,7 +163,7 @@ func (a *Analysis) RunAnalysis() {
 				results, err := analyzer.Analyze(analyzerConfig)
 				if err != nil {
 					mutex.Lock()
-					a.Errors = append(a.Errors, fmt.Sprintf(fmt.Sprintf("[%s] %s", reflect.TypeOf(analyzer).Name(), err)))
+					a.Errors = append(a.Errors, fmt.Sprintf("[%s] %s", reflect.TypeOf(analyzer).Name(), err))
 					mutex.Unlock()
 				}
 				mutex.Lock()
@@ -160,6 +174,7 @@ func (a *Analysis) RunAnalysis() {
 
 		}
 		wg.Wait()
+		return
 	}
 	semaphore = make(chan struct{}, a.MaxConcurrency)
 	// if the filters flag is specified
@@ -176,7 +191,7 @@ func (a *Analysis) RunAnalysis() {
 					results, err := analyzer.Analyze(analyzerConfig)
 					if err != nil {
 						mutex.Lock()
-						a.Errors = append(a.Errors, fmt.Sprintf(fmt.Sprintf("[%s] %s", filter, err)))
+						a.Errors = append(a.Errors, fmt.Sprintf("[%s] %s", filter, err))
 						mutex.Unlock()
 					}
 					mutex.Lock()
@@ -185,10 +200,11 @@ func (a *Analysis) RunAnalysis() {
 					<-semaphore
 				}(analyzer, filter)
 			} else {
-				a.Errors = append(a.Errors, fmt.Sprintf(fmt.Sprintf("\"%s\" filter does not exist. Please run k8sgpt filters list.", filter)))
+				a.Errors = append(a.Errors, fmt.Sprintf("\"%s\" filter does not exist. Please run k8sgpt filters list.", filter))
 			}
 		}
 		wg.Wait()
+		return
 	}
 
 	var wg sync.WaitGroup
@@ -230,12 +246,40 @@ func (a *Analysis) GetAIResults(output string, anonymize bool) error {
 	var index int
 	var analysis common.Result
 	for index, analysis = range a.Results {
-
 		//var prompt_data interface{}
 		kind = analysis.Kind
 		failure := analysis.NodeStatusResult
 		status := fmt.Sprintf("%+v", failure)
 		texts = append(texts, status)
+		//parsedText, err := a.AIClient.Parse(a.Context, texts, a.Cache)
+		//if err != nil {
+		//	// FIXME: can we avoid checking if output is json multiple times?
+		//	//   maybe implement the progress bar better?
+		//	if output != "json" {
+		//		_ = bar.Exit()
+		//	}
+		//
+		//	// Check for exhaustion
+		//	if strings.Contains(err.Error(), "status code: 429") {
+		//		return fmt.Errorf("exhausted API quota for AI provider %s: %v", a.AIClient.GetName(), err)
+		//	} else {
+		//		return fmt.Errorf("failed while calling AI provider %s: %v", a.AIClient.GetName(), err)
+		//	}
+		//}
+		//
+		//if anonymize {
+		//	for _, failure := range analysis.Error {
+		//		for _, s := range failure.Sensitive {
+		//			parsedText = strings.ReplaceAll(parsedText, s.Masked, s.Unmasked)
+		//		}
+		//	}
+		//}
+		//
+		//analysis.Details = parsedText
+		//if output != "json" {
+		//	_ = bar.Add(1)
+		//}
+		//a.Results[index] = analysis
 	}
 	parsedText, err := a.AIClient.Parse(a.Context, texts, a.Cache, kind)
 	if err != nil {

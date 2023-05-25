@@ -69,7 +69,7 @@ func (s *Config) Serve() error {
 	grpcServerUnaryInterceptor := grpc.UnaryInterceptor(logInterceptor(s.Logger))
 	grpcServer := grpc.NewServer(grpcServerUnaryInterceptor)
 	reflection.Register(grpcServer)
-	rpc.RegisterServerServer(grpcServer, s.Handler)
+	rpc.RegisterServerServiceServer(grpcServer, s.Handler)
 	if err := grpcServer.Serve(
 		lis,
 	); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -107,7 +107,7 @@ func (s *Config) healthzHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	fmt.Fprintf(w, string(js))
+	fmt.Fprint(w, string(js))
 }
 
 func getBoolParam(param string) bool {
