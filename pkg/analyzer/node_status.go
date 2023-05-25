@@ -14,18 +14,18 @@ limitations under the License.
 package analyzer
 
 import (
-	"strings"
 	"fmt"
-	v1 "k8s.io/api/core/v1"
 	"github.com/k8sgpt-ai/k8sgpt/pkg/common"
 	"github.com/k8sgpt-ai/k8sgpt/pkg/util"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"	
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"strings"
 )
 
 type NodeStatusAnalyzer struct{}
 
 func (NodeStatusAnalyzer) Analyze(a common.Analyzer) ([]common.Result, error) {
-   
+
 	kind := "NodeStatus"
 
 	list, err := a.Client.GetClient().CoreV1().Nodes().List(a.Context, metav1.ListOptions{})
@@ -38,23 +38,23 @@ func (NodeStatusAnalyzer) Analyze(a common.Analyzer) ([]common.Result, error) {
 	for _, node := range list.Items {
 		var status common.NodeStatus
 
-        nodeRole := getNodeRole(node)
+		nodeRole := getNodeRole(node)
 		cpuUsage, memoryUsage := getNodeResourceUsage(a, node.Name)
-        tolalPods, workloadPods :=  getPodDetails(a, node.Name)
+		tolalPods, workloadPods := getPodDetails(a, node.Name)
 		// // Get the number of non-system pods running on the node
 		// nonSystemPodsCount := getNonSystemPodsCount(clientset, *nodeName)
 
-		status = addNodeStatus(status, node, nodeRole, cpuUsage, memoryUsage, tolalPods, workloadPods)	
+		status = addNodeStatus(status, node, nodeRole, cpuUsage, memoryUsage, tolalPods, workloadPods)
 		preAnalysis[node.Name] = common.PreAnalysis{
-			    Node:           node,
-				NodeStatusDetails: status,
+			Node:              node,
+			NodeStatusDetails: status,
 		}
 	}
-    //fmt.Println(len(preAnalysis))
+	//fmt.Println(len(preAnalysis))
 	for key, value := range preAnalysis {
 		var currentAnalysis = common.Result{
-			Kind:  kind,
-			Name:  key,
+			Kind:             kind,
+			Name:             key,
 			NodeStatusResult: value.NodeStatusDetails,
 		}
 
@@ -70,11 +70,15 @@ func (NodeStatusAnalyzer) Analyze(a common.Analyzer) ([]common.Result, error) {
 func getNodeRole(node v1.Node) string {
 	// Check for specific labels that indicate the role of the node
 	if _, ok := node.Labels["node-role.kubernetes.io/master"]; ok {
-		return "Master"
-	} else if _, ok := node.Labels["node-role.kubernetes.io/worker"]; ok {
-		return "Worker"
+		return "master"
 	}
-	return ""
+	if _, ok := node.Labels["jumbo-worker"]; ok {
+		return "jumbo"
+	}
+	if _, ok := node.Labels["node-role.kubernetes.io/storage"]; ok {
+		return "storage"
+	}
+	return "worker"
 }
 
 func getNodeResourceUsage(a common.Analyzer, nodeName string) (cpuUsage, memoryUsage string) {
@@ -85,10 +89,10 @@ func getNodeResourceUsage(a common.Analyzer, nodeName string) (cpuUsage, memoryU
 }
 
 func getPodDetails(a common.Analyzer, nodeName string) (totalPodCount, workLoadPodCount int) {
-	totalPodList, _ := a.Client.GetClient().CoreV1().Pods("").List(a.Context, metav1.ListOptions{FieldSelector: fmt.Sprintf("spec.nodeName=%s", nodeName),})
+	totalPodList, _ := a.Client.GetClient().CoreV1().Pods("").List(a.Context, metav1.ListOptions{FieldSelector: fmt.Sprintf("spec.nodeName=%s", nodeName)})
 	workloadPodCount := 0
 	for _, pod := range totalPodList.Items {
-		if ! strings.HasPrefix(pod.Namespace,"openshift") {
+		if !strings.HasPrefix(pod.Namespace, "openshift") {
 			workloadPodCount++
 		}
 	}
@@ -101,17 +105,16 @@ func addNodeStatus(nodestatus common.NodeStatus, node v1.Node, nodeRole string, 
 	cpuAllocatable := node.Status.Allocatable[v1.ResourceCPU]
 	memAllocatable := node.Status.Allocatable[v1.ResourceMemory]
 	nodestatus = common.NodeStatus{
-		 Name:                    node.Name,
-		 Role:                    nodeRole,
-		 CPUUsage:			      cpuUsage,
-		 MemoryUsage:             memoryUsage,
-		 CPUCapacity:             cpuCapacity.String(),
-		 MemCapacity:             memCapacity.String(),
-		 CPUAllocatable:          cpuAllocatable.String(),
-		 MemAllocatable:          memAllocatable.String(),
-		 TotalPodCount:           totalPoudCount,
-		 WorkloadPodCount:        workloadPodCount,
-	 }
+		Name:             node.Name,
+		Role:             nodeRole,
+		CPUUsage:         cpuUsage,
+		MemoryUsage:      memoryUsage,
+		CPUCapacity:      cpuCapacity.String(),
+		MemCapacity:      memCapacity.String(),
+		CPUAllocatable:   cpuAllocatable.String(),
+		MemAllocatable:   memAllocatable.String(),
+		TotalPodCount:    totalPoudCount,
+		WorkloadPodCount: workloadPodCount,
+	}
 	return nodestatus
-} 
-
+}

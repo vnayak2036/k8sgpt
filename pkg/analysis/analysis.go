@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/schollz/progressbar/v3"
 	"os"
 	"reflect"
 	"strings"
@@ -28,7 +29,6 @@ import (
 	"github.com/k8sgpt-ai/k8sgpt/pkg/cache"
 	"github.com/k8sgpt-ai/k8sgpt/pkg/common"
 	"github.com/k8sgpt-ai/k8sgpt/pkg/kubernetes"
-	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/viper"
 )
 
@@ -225,47 +225,47 @@ func (a *Analysis) GetAIResults(output string, anonymize bool) error {
 	if output != "json" {
 		bar = progressbar.Default(int64(len(a.Results)))
 	}
-    var texts []string
+	var texts []string
 	var kind string
 	var index int
 	var analysis common.Result
 	for index, analysis = range a.Results {
-		
+
 		//var prompt_data interface{}
 		kind = analysis.Kind
 		failure := analysis.NodeStatusResult
 		status := fmt.Sprintf("%+v", failure)
 		texts = append(texts, status)
 	}
-		parsedText, err := a.AIClient.Parse(a.Context, texts, a.Cache, kind)
-		if err != nil {
-			// FIXME: can we avoid checking if output is json multiple times?
-			//   maybe implement the progress bar better?
-			if output != "json" {
-				bar.Exit()
-			}
-
-			// Check for exhaustion
-			if strings.Contains(err.Error(), "status code: 429") {
-				return fmt.Errorf("exhausted API quota for AI provider %s: %v", a.AIClient.GetName(), err)
-			} else {
-				return fmt.Errorf("failed while calling AI provider %s: %v", a.AIClient.GetName(), err)
-			}
-		}
-
-		if anonymize {
-			for _, failure := range analysis.Error {
-				for _, s := range failure.Sensitive {
-					parsedText = strings.ReplaceAll(parsedText, s.Masked, s.Unmasked)
-				}
-			}
-		}
-
-		analysis.Details = parsedText
+	parsedText, err := a.AIClient.Parse(a.Context, texts, a.Cache, kind)
+	if err != nil {
+		// FIXME: can we avoid checking if output is json multiple times?
+		//   maybe implement the progress bar better?
 		if output != "json" {
-			bar.Add(1)
+			bar.Exit()
 		}
-		a.Results[index] = analysis
-	
+
+		// Check for exhaustion
+		if strings.Contains(err.Error(), "status code: 429") {
+			return fmt.Errorf("exhausted API quota for AI provider %s: %v", a.AIClient.GetName(), err)
+		} else {
+			return fmt.Errorf("failed while calling AI provider %s: %v", a.AIClient.GetName(), err)
+		}
+	}
+
+	if anonymize {
+		for _, failure := range analysis.Error {
+			for _, s := range failure.Sensitive {
+				parsedText = strings.ReplaceAll(parsedText, s.Masked, s.Unmasked)
+			}
+		}
+	}
+
+	analysis.Details = parsedText
+	if output != "json" {
+		bar.Add(1)
+	}
+	a.Results[index] = analysis
+
 	return nil
 }
