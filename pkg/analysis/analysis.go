@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/k8sgpt-ai/k8sgpt/pkg/util"
 	"github.com/schollz/progressbar/v3"
 	"os"
 	"reflect"
@@ -237,50 +238,49 @@ func (a *Analysis) GetAIResults(output string, anonymize bool) error {
 	if len(a.Results) == 0 {
 		return nil
 	}
+
 	var bar *progressbar.ProgressBar
 	if output != "json" {
 		bar = progressbar.Default(int64(len(a.Results)))
 	}
+
 	var texts []string
 	var kind string
 	var index int
 	var analysis common.Result
+
 	for index, analysis = range a.Results {
 		//var prompt_data interface{}
 		kind = analysis.Kind
-		failure := analysis.NodeStatusResult
-		status := fmt.Sprintf("%+v", failure)
-		texts = append(texts, status)
-		//parsedText, err := a.AIClient.Parse(a.Context, texts, a.Cache)
-		//if err != nil {
-		//	// FIXME: can we avoid checking if output is json multiple times?
-		//	//   maybe implement the progress bar better?
-		//	if output != "json" {
-		//		_ = bar.Exit()
-		//	}
-		//
-		//	// Check for exhaustion
-		//	if strings.Contains(err.Error(), "status code: 429") {
-		//		return fmt.Errorf("exhausted API quota for AI provider %s: %v", a.AIClient.GetName(), err)
-		//	} else {
-		//		return fmt.Errorf("failed while calling AI provider %s: %v", a.AIClient.GetName(), err)
-		//	}
-		//}
-		//
-		//if anonymize {
-		//	for _, failure := range analysis.Error {
-		//		for _, s := range failure.Sensitive {
-		//			parsedText = strings.ReplaceAll(parsedText, s.Masked, s.Unmasked)
-		//		}
-		//	}
-		//}
-		//
-		//analysis.Details = parsedText
-		//if output != "json" {
-		//	_ = bar.Add(1)
-		//}
-		//a.Results[index] = analysis
+		if kind == "NodeStatus" {
+			failure := analysis.NodeStatusResult
+			status := fmt.Sprintf("%+v", failure)
+			texts = append(texts, status)
+		} else {
+			for _, failure := range analysis.Error {
+				if anonymize {
+					for _, s := range failure.Sensitive {
+						failure.Text = util.ReplaceIfMatch(failure.Text, s.Unmasked, s.Masked)
+					}
+				}
+				texts = append(texts, failure.Text)
+			}
+			err2 := a.ParseAndExtract(output, anonymize, texts, kind, bar, analysis, index)
+			if err2 != nil {
+				return err2
+			}
+		}
 	}
+	if kind == "NodeStatus" {
+		err2 := a.ParseAndExtract(output, anonymize, texts, kind, bar, analysis, index)
+		if err2 != nil {
+			return err2
+		}
+	}
+	return nil
+}
+
+func (a *Analysis) ParseAndExtract(output string, anonymize bool, texts []string, kind string, bar *progressbar.ProgressBar, analysis common.Result, index int) error {
 	parsedText, err := a.AIClient.Parse(a.Context, texts, a.Cache, kind)
 	if err != nil {
 		// FIXME: can we avoid checking if output is json multiple times?
@@ -296,7 +296,6 @@ func (a *Analysis) GetAIResults(output string, anonymize bool) error {
 			return fmt.Errorf("failed while calling AI provider %s: %v", a.AIClient.GetName(), err)
 		}
 	}
-
 	if anonymize {
 		for _, failure := range analysis.Error {
 			for _, s := range failure.Sensitive {
@@ -310,6 +309,5 @@ func (a *Analysis) GetAIResults(output string, anonymize bool) error {
 		bar.Add(1)
 	}
 	a.Results[index] = analysis
-
 	return nil
 }

@@ -1,8 +1,10 @@
 package ai
 
 const (
-	default_prompt = `Explain the following Kubernetes error message and provide the steps for a solution in %s: %s.  
-	                  Also provide sample yaml code where possible`
+	default_prompt = `Simplify the following Kubernetes error message delimited by triple dashes written in --- %s --- language; --- %s ---.
+                                        Provide the most possible solution in a step by step style in no more than 280 characters. Write the output in the following format:
+                                        Error: {Explain error here}
+                                        Solution: {Step by step solution here. Provide Sample code if possible}`
 
 	node_usage_prompt = `Given the below openshift nodes details in double quotes, do the below tasks. 
     In the below data each node can be identified by its name which starts with "{Name:ip-...}". Every node has a Role associated with it, 

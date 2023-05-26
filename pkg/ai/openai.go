@@ -83,6 +83,7 @@ func (c *OpenAIClient) GetCompletion(ctx context.Context, prompt string, prompt_
 		},
 		Temperature: 0,
 	})
+
 	if err != nil {
 		return "", err
 	}
@@ -124,14 +125,12 @@ func (a *OpenAIClient) Parse(ctx context.Context, prompt []string, cache cache.I
 	if err != nil {
 		return "", err
 	}
-
 	err = cache.Store(cacheKey, base64.StdEncoding.EncodeToString([]byte(response)))
 
 	if err != nil {
 		color.Red("error storing value to cache: %v", err)
 		return "", nil
 	}
-
 	return response, nil
 }
 
